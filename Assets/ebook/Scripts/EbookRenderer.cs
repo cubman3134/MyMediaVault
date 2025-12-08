@@ -58,15 +58,32 @@ public class TaggedData
 public class EbookRenderer : MonoBehaviour {
 	public Text displayText;
 	public TextAsset testBook;
+	public Button NextPageButton;
+	private UEPubReader _epub;
+	private bool _bookFinished;
 
-	//private EpubBook epubBook;
+    //private EpubBook epubBook;
 
-	// Use this for initialization
-	void Start () {
-		OpenEbookFile ();
+
+
+    // Use this for initialization
+    void Start () {
+		NextPageButton.onClick.AddListener(TaskOnClick);
+
+        OpenEbookFile ();
 	}
 
-	string GetTextWithTags(string text, string tag, bool keepInnerInfo)
+	private string _chapterText;
+	private int _currentPageStartIndex = 0;
+	private int _charsBeingAddedToPage = 0;
+	private int _currentChapter;
+
+    void TaskOnClick()
+    {
+		RenderNextPage();
+    }
+
+    string GetTextWithTags(string text, string tag, bool keepInnerInfo)
 	{
         System.Text.RegularExpressions.Match match = null;
         do
@@ -91,68 +108,135 @@ public class EbookRenderer : MonoBehaviour {
         while (match.Success);
         return text;
 	}
-	
-	void OpenEbookFile(){
-		// Opening a book
-		//epubBook = EpubReader.OpenBook("austen-pride-and-prejudice-illustrations.epub");
-		//EpubChapter chapter = epubBook.Chapters [0];
-		//displayText.text = chapter.HtmlContent;
-		int standardFontSize = 10;
-		var epub = new UEPubReader("Assets/ebook/Books/austen-pride-and-prejudice-illustrations.epub");
-		var text = epub.chapters[10];
+
+	public void RenderNextPage()
+	{
+		if (_bookFinished)
+		{
+			return;
+		}
+		int newStartPageIndex = _currentPageStartIndex + (displayText?.cachedTextGenerator?.characterCount ?? 0) - _charsBeingAddedToPage;
+        int currentIndex = newStartPageIndex;
+		displayText.text = string.Empty;
+		char currentChar = '\0';
+		string currentWord = string.Empty;
+		List<char> spaceChars = new List<char>()
+		{
+			' ',
+			'\n'
+		};
+		int truncateWordsOverThisManyChars = 6;
+        while (displayText.cachedTextGenerator.characterCountVisible <= displayText.cachedTextGenerator.characterCount)
+		{
+			if (currentIndex >= _chapterText.Length)
+			{
+				break;
+			}
+			currentChar = _chapterText[currentIndex++];
+            if (spaceChars.Contains(currentChar))
+            {
+				currentWord = string.Empty;
+            }
+			else
+			{
+				currentWord += currentChar;
+			}
+			displayText.text += currentChar;
+		}
+        _currentPageStartIndex = newStartPageIndex;
+        _charsBeingAddedToPage = 0;
+		if (!spaceChars.Contains(currentChar))
+		{
+			if (currentWord.Length > truncateWordsOverThisManyChars)
+			{
+				displayText.text = displayText.text.Substring(0, displayText.text.Length - 2);
+				displayText.text += "-";
+				_charsBeingAddedToPage = 1;
+            }
+			else
+			{
+				displayText.text = displayText.text.Substring(0, displayText.text.Length - currentWord.Length);
+			}
+		}
+		// done with chapter
+		if (displayText.text == string.Empty)
+		{
+			if (++_currentChapter == _epub.chapters.Count)
+			{
+				_bookFinished = true;
+				displayText.text = "End of book.";
+				return;
+			}
+			_currentPageStartIndex = 0;
+			PrepareTextForChapter(_currentChapter);
+			RenderNextPage();
+		}
+    }
+
+	public void PrepareEPub()
+	{
+        _epub = new UEPubReader("Assets/ebook/Books/austen-pride-and-prejudice-illustrations.epub");
+    }
+
+    public void PrepareTextForChapter(int chapterNumber)
+	{
+        var text = _epub.chapters[chapterNumber];
+        text = text.Replace("-\n", "");
+        text = text.Replace("\n", " ");
         text = text.Replace("<br>", "\n");
         text = text.Replace("<p>", "\n");
         text = text.Replace("</p>", "\n");
         var tagsToKeep = new List<string>()
-		{
-			//"p",
-			"head",
-			"b",
-			"em",
-			"h1",
-			"h2",
-			"h3",
-			"h4",
-			"h5",
-			"h6"
-		};
-		var tagsToDeleteInnerInfo = new List<string>() 
-		{ 
-			"title" 
-		};
-		foreach (var tag in tagsToKeep)
-		{
-			text = GetTextWithTags(text, tag, true);
+        {
+            "head",
+            "b",
+            "em",
+            "h1",
+            "h2",
+            "h3",
+            "h4",
+            "h5",
+            "h6"
+        };
+        var tagsToDeleteInnerInfo = new List<string>()
+        {
+            "title"
+        };
+        foreach (var tag in tagsToKeep)
+        {
+            text = GetTextWithTags(text, tag, true);
         }
-		foreach (var tag in tagsToDeleteInnerInfo)
-		{
-			text = GetTextWithTags(text, tag, false);
-		}
+        foreach (var tag in tagsToDeleteInnerInfo)
+        {
+            text = GetTextWithTags(text, tag, false);
+        }
         text = Regex.Replace(text, "<.*?>", String.Empty);
-		text = text.Replace("{head}", "<size=120%>");
-		text = text.Replace("{/head}", "</size>\n");
-		text = text.Replace("{title}", "<size=140%>");
-		text = text.Replace("{/title}", "</size>\n");
-		text = text.Replace("{b}", "<b>");
-		text = text.Replace("{/b}", "</b>");
-		text = text.Replace("{em}", "<em>");
-		text = text.Replace("{/em}", "</em>");
-		for (int hIterator = 1; hIterator <= 6; hIterator++)
-		{
-			var tag = "{h" + hIterator + "}";
-			var endTag = "{/h" + hIterator + "}";
-			int newSize = 100 + hIterator * 4;
-			text = text.Replace(tag, $"<size={newSize}>");
-			text = text.Replace(endTag, $"</size>\n");
-		}
-        /*var htmlStartTag = text.IndexOf("<html");
-		text = text.Replace("<em>", "{emphasis}");
-		text = text.Replace("</em>", "{emphasis/}");
-		text = text.Replace("<b>", "{bold}");
-		text = text.Replace("</b>", "{bold/}");*/
-        Debug.Log (epub.epubFolderLocation);
+        text = text.Replace("{head}", "<size=120%>");
+        text = text.Replace("{/head}", "</size>\n");
+        text = text.Replace("{title}", "<size=140%>");
+        text = text.Replace("{/title}", "</size>\n");
+        text = text.Replace("{b}", "<b>");
+        text = text.Replace("{/b}", "</b>");
+        text = text.Replace("{em}", "<i>");
+        text = text.Replace("{/em}", "</i>");
+        for (int hIterator = 1; hIterator <= 6; hIterator++)
+        {
+            var tag = "{h" + hIterator + "}";
+            var endTag = "{/h" + hIterator + "}";
+            int newSize = 100 + hIterator * 4;
+            text = text.Replace(tag, $"<size={newSize}>");
+            text = text.Replace(endTag, $"</size>\n");
+        }
+        _chapterText = text;
+    }
+
+    void OpenEbookFile()
+	{
+		PrepareEPub();
+		PrepareTextForChapter(10); // test todo todo
+		RenderNextPage();
 		//displayText.text = "This is some <b><size=50><color=#ff0000ff>Text</color></size></b>";
-        displayText.text = text;
+        //displayText.text = _chapterText;
 		//File.WriteAllText("Assets/ebook/Books/austen-pride-and-prejudice-chapter-10.html", epub.chapters[10]);
         //displayText.text = epub.chapters[10];
     }
