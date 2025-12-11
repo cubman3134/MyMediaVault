@@ -61,7 +61,9 @@ public class EbookRenderer : MonoBehaviour {
 	public Button NextPageButton;
 	private UEPubReader _epub;
 	private bool _bookFinished;
-
+    private const char _tagStartChar = (char)0x01;
+    private const char _tagEndChar = (char)0x02;
+    private Stack<string> _currentTags = new Stack<string>();
     //private EpubBook epubBook;
 
 
@@ -137,6 +139,22 @@ public class EbookRenderer : MonoBehaviour {
             {
 				currentWord = string.Empty;
             }
+			else if (currentChar == _tagStartChar)
+			{
+				currentIndex++;
+				string currentTag = string.Empty;
+				do
+				{
+					currentChar = _chapterText[currentIndex++];
+					currentTag += currentChar;
+				} while (currentChar != '>');
+				_currentTags.Push(currentTag);
+				continue;
+			}
+			else if (currentChar == _tagEndChar)
+			{
+				_currentTags.TryPop(out _);
+			}
 			else
 			{
 				currentWord += currentChar;
@@ -211,21 +229,25 @@ public class EbookRenderer : MonoBehaviour {
             text = GetTextWithTags(text, tag, false);
         }
         text = Regex.Replace(text, "<.*?>", String.Empty);
-        text = text.Replace("{head}", "<size=120%>");
-        text = text.Replace("{/head}", "</size>\n");
-        text = text.Replace("{title}", "<size=140%>");
+        text = text.Replace("{head}", $"{_tagStartChar}<size=120%>");
+        text = text.Replace("{b}", $"{_tagStartChar}<b>");
+        text = text.Replace("{em}", $"{_tagStartChar}<i>");
+
+        /*text = text.Replace("{/head}", "</size>\n");
         text = text.Replace("{/title}", "</size>\n");
-        text = text.Replace("{b}", "<b>");
         text = text.Replace("{/b}", "</b>");
-        text = text.Replace("{em}", "<i>");
-        text = text.Replace("{/em}", "</i>");
+        text = text.Replace("{/em}", "</i>");*/
+        text = text.Replace("{/head}", $"{_tagEndChar}\n");
+        text = text.Replace("{/b}", $"{_tagEndChar}");
+        text = text.Replace("{/em}", $"{_tagEndChar}");
         for (int hIterator = 1; hIterator <= 6; hIterator++)
         {
             var tag = "{h" + hIterator + "}";
             var endTag = "{/h" + hIterator + "}";
             int newSize = 100 + hIterator * 4;
             text = text.Replace(tag, $"<size={newSize}>");
-            text = text.Replace(endTag, $"</size>\n");
+			text = text.Replace(endTag, $"{_tagEndChar}");
+			//text = text.Replace(endTag, $"</size>\n");
         }
         _chapterText = text;
     }
