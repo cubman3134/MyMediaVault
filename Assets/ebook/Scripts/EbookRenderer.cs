@@ -63,7 +63,9 @@ public class EbookRenderer : MonoBehaviour {
 	private bool _bookFinished;
     private const char _tagStartChar = (char)0x01;
     private const char _tagEndChar = (char)0x02;
+	private const char _tagStartEndChar = (char)0x03;
     private Stack<string> _currentTags = new Stack<string>();
+	private Stack<string> _clearedTags = new Stack<string>();
     //private EpubBook epubBook;
 
 
@@ -111,6 +113,32 @@ public class EbookRenderer : MonoBehaviour {
         return text;
 	}
 
+	public string AddTagEndAndRemoveTag(string text)
+	{
+		string tagText = string.Empty;
+		if (_currentTags.TryPop(out var tag))
+		{
+			_clearedTags.Push(tag);
+			tagText = GetEndTagForTag(tag);
+		}
+		return $"{text}{tagText}";
+	}
+
+	public string GetEndTagForTag(string tagName)
+	{
+		return tagName.Substring(0, tagName.Length - 1) + " />";
+    }
+
+	public string AddTagsToText(bool tagStart, string text)
+	{
+		var tagsToAdd = _currentTags.ToList();
+		if (!tagStart)
+		{
+			tagsToAdd = tagsToAdd.Select(x => GetEndTagForTag(x)).Reverse().ToList();
+		}
+		return text + string.Join("", tagsToAdd);
+	}
+
 	public void RenderNextPage()
 	{
 		if (_bookFinished)
@@ -128,16 +156,21 @@ public class EbookRenderer : MonoBehaviour {
 			'\n'
 		};
 		int truncateWordsOverThisManyChars = 6;
+		string preDisplayedDisplayText = string.Empty;
+        _clearedTags.Clear();
         while (displayText.cachedTextGenerator.characterCountVisible <= displayText.cachedTextGenerator.characterCount)
 		{
+			_clearedTags.Clear();
 			if (currentIndex >= _chapterText.Length)
 			{
 				break;
 			}
+			currentWord = string.Empty;
 			currentChar = _chapterText[currentIndex++];
             if (spaceChars.Contains(currentChar))
             {
-				currentWord = string.Empty;
+                preDisplayedDisplayText += currentChar;
+                currentWord = string.Empty;
             }
 			else if (currentChar == _tagStartChar)
 			{
@@ -147,19 +180,23 @@ public class EbookRenderer : MonoBehaviour {
 				{
 					currentChar = _chapterText[currentIndex++];
 					currentTag += currentChar;
-				} while (currentChar != '>');
+				} while (currentChar != _tagStartEndChar);
+				currentIndex++;
+				preDisplayedDisplayText += currentTag;
 				_currentTags.Push(currentTag);
 				continue;
 			}
 			else if (currentChar == _tagEndChar)
 			{
-				_currentTags.TryPop(out _);
-			}
-			else
+				preDisplayedDisplayText = AddTagEndAndRemoveTag(preDisplayedDisplayText);
+                continue;
+            }
+            else
 			{
 				currentWord += currentChar;
-			}
-			displayText.text += currentChar;
+                preDisplayedDisplayText += currentChar;
+            }
+            displayText.text = AddTagsToText(false, preDisplayedDisplayText);
 		}
         _currentPageStartIndex = newStartPageIndex;
         _charsBeingAddedToPage = 0;
